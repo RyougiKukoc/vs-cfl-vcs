@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling>=1.30", "packaging>=24.0", "meson>=0.49", "ninja"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vs-cfl"
+version = "1.0.1"
+description = "Chroma-from-Luma reconstruction filter for VapourSynth"
+readme = "README.md"
+license = { text = "MIT" }
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+authors = [{ name = "vs-cfl contributors" }]
+dependencies = ["VapourSynth>=77"]
+
+[project.urls]
+"Source Code" = "https://github.com/RyougiKukoc/vs-cfl-vcs"
+"Releases" = "https://github.com/RyougiKukoc/vs-cfl-vcs/releases"
+
+[tool.hatch.build.targets.sdist]
+include = [
+  ".github/workflows/build-msys2.yml",
+  "hatch_build.py",
+  "include",
+  "LICENSE",
+  "meson.build",
+  "pyproject.toml",
+  "README.md",
+  "src",
+  "tools",
+]
+
+[tool.hatch.build.targets.wheel]
+include = ["vapoursynth/plugins"]
+artifacts = [
+  "vapoursynth/plugins/**/*.dll",
+  "vapoursynth/plugins/**/manifest.vs",
+]
+
+[tool.hatch.build.targets.wheel.hooks.custom]
+path = "hatch_build.py"

@@ -1,7 +1,7 @@
 project('vs-cfl', 'cpp',
     version: '1.0.1',
     default_options: [
-        'cpp_std=c++latest', # c++23
+        'cpp_std=c++23',
         'buildtype=release',
         'b_lto=true',
     ])

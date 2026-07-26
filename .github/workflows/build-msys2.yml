@@ -1,0 +1,139 @@
+name: Build MSYS2
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Windows UCRT64
+    runs-on: windows-2025
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up CPython
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Python tools
+        shell: cmd
+        run: >-
+          "%pythonLocation%\python.exe" -m pip install --upgrade pip build hatchling packaging meson ninja
+
+      - name: Set up MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-meson
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkgconf
+
+      - name: Prepare VapourSynth R77 wheel
+        shell: cmd
+        run: >-
+          "%pythonLocation%\python.exe" tools\ci_prepare_msys2.py
+
+      - name: Build plugin package
+        run: /ucrt64/bin/python tools/ci_build_msys2.py --clean
+
+      - name: Smoke-load packaged plugin
+        shell: cmd
+        run: >-
+          "%pythonLocation%\python.exe" tools\smoke_load_artifact.py
+          --vapoursynth-root _deps\vapoursynth-wheel-R77
+          --artifact-dir dist\msys2-ucrt64
+          --exercise-filter
+
+      - name: Smoke-load package through manifest autoload
+        shell: cmd
+        run: >-
+          "%pythonLocation%\python.exe" tools\smoke_load_artifact.py
+          --vapoursynth-root _deps\vapoursynth-wheel-R77
+          --artifact-dir dist\msys2-ucrt64
+          --autoload
+          --exercise-filter
+
+      - name: Pack release zip
+        shell: cmd
+        run: >-
+          "%pythonLocation%\python.exe" tools\package_plugin_zip.py
+          --input-dir dist\msys2-ucrt64
+          --output dist\vs-cfl-msys2-ucrt64.zip
+
+      - name: Build wheel from local prebuilt package
+        shell: cmd
+        env:
+          VS_CFL_PREBUILT_URL: ${{ github.workspace }}\dist\vs-cfl-msys2-ucrt64.zip
+        run: >-
+          "%pythonLocation%\python.exe" -m build --wheel --no-isolation --outdir dist\wheels
+
+      - name: Install built wheel
+        shell: cmd
+        run: >-
+          for %%I in (dist\wheels\*.whl) do "%pythonLocation%\python.exe" -m pip install --force-reinstall "%%~fI"
+
+      - name: Smoke test installed wheel
+        shell: cmd
+        run: >-
+          "%pythonLocation%\python.exe" tools\smoke_installed_wheel.py --exercise-filter
+
+      - name: Smoke test source install with prebuilt release asset
+        shell: cmd
+        env:
+          VS_CFL_PREBUILT_URL: ${{ github.workspace }}\dist\vs-cfl-msys2-ucrt64.zip
+        run: |
+          "%pythonLocation%\python.exe" -m pip uninstall -y vs-cfl
+          "%pythonLocation%\python.exe" -m pip install --force-reinstall --no-deps --no-build-isolation -v .
+          "%pythonLocation%\python.exe" tools\smoke_installed_wheel.py --exercise-filter
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: vs-cfl-msys2-ucrt64
+          path: dist/msys2-ucrt64
+
+      - name: Upload release zip artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: vs-cfl-release-zip
+          path: dist/vs-cfl-msys2-ucrt64.zip
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: vs-cfl-wheel-win64
+          path: dist/wheels
+
+      - name: Upload release assets
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release'
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || github.ref_name }}
+        run: |
+          $tag = $env:RELEASE_TAG
+          $assets = @("dist\vs-cfl-msys2-ucrt64.zip")
+          $assets += Get-ChildItem dist\wheels\*.whl | Select-Object -ExpandProperty FullName
+          & cmd.exe /d /c "gh release view $tag --repo $env:GITHUB_REPOSITORY >NUL 2>NUL"
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $assets --clobber --repo $env:GITHUB_REPOSITORY
+          } else {
+            gh release create $tag $assets --title $tag --notes "Automated MSYS2/UCRT64 build." --repo $env:GITHUB_REPOSITORY
+          }

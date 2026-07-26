@@ -1,0 +1,6 @@
+/_deps/
+/build-*/
+/dist/
+/vapoursynth/
+__pycache__/
+*.py[cod]
