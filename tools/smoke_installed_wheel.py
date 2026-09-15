@@ -14,6 +14,19 @@ from smoke_load_artifact import exercise_filter, plugin_suffix
 PLUGIN_NAME = "vs_cfl"
 
 
+def vapoursynth_package_dir(vs) -> Path:
+    module_file = getattr(vs, "__file__", None)
+    if module_file:
+        return Path(module_file).resolve().parent
+    locations = getattr(vs, "__path__", ())
+    for location in locations:
+        return Path(location).resolve()
+    module_spec = getattr(vs, "__spec__", None)
+    for location in getattr(module_spec, "submodule_search_locations", ()) or ():
+        return Path(location).resolve()
+    raise RuntimeError("could not locate the installed VapourSynth package directory")
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Smoke test an installed vs-cfl wheel.")
     parser.add_argument("--site-dir", help="Optional site-packages path to prepend.")
@@ -25,7 +38,7 @@ def main(argv: list[str]) -> int:
         sys.path.insert(0, args.site_dir)
     import vapoursynth as vs
 
-    package_dir = Path(vs.__file__).resolve().parent / "plugins" / PLUGIN_NAME
+    package_dir = vapoursynth_package_dir(vs) / "plugins" / PLUGIN_NAME
     for required in (package_dir / f"{PLUGIN_NAME}{plugin_suffix()}", package_dir / "manifest.vs"):
         if not required.is_file():
             raise FileNotFoundError(f"missing installed file: {required}")
