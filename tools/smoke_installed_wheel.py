@@ -1,63 +1,39 @@
+#!/usr/bin/env python3
+"""Smoke test an installed vs-cfl wheel through VapourSynth plugin autoload."""
+
 from __future__ import annotations
 
 import argparse
-import os
-import site
+import json
 import sys
-import sysconfig
 from pathlib import Path
+
+from smoke_load_artifact import exercise_filter, plugin_suffix
 
 
 PLUGIN_NAME = "vs_cfl"
 
 
-def add_dll_dirs(paths: list[Path]) -> None:
-    add_dll_directory = getattr(os, "add_dll_directory", None)
-    if add_dll_directory:
-        for path in paths:
-            if path.exists():
-                add_dll_directory(str(path))
-
-
-def exercise_filter(core, vs) -> None:
-    source = core.std.BlankClip(width=64, height=32, format=vs.YUV420P8, length=1, color=[96, 112, 144])
-    clip = core.cfl.KACFL(source)
-    frame = clip.get_frame(0)
-    if frame.width != 64 or frame.height != 32 or clip.format.id != vs.YUV444P8:
-        raise RuntimeError(f"unexpected output: {frame.width}x{frame.height}, format={clip.format.name}")
-    stats = core.std.PlaneStats(clip).get_frame(0).props
-    print(f"filter exercise: {clip.width}x{clip.height} {clip.format.name}")
-    print(f"PlaneStatsAverage={stats['PlaneStatsAverage']}")
-
-
 def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description="Smoke-test an installed vs-cfl wheel.")
-    parser.add_argument("--exercise-filter", action="store_true")
+    parser = argparse.ArgumentParser(description="Smoke test an installed vs-cfl wheel.")
+    parser.add_argument("--site-dir", help="Optional site-packages path to prepend.")
+    parser.add_argument("--exercise-filter", action="store_true", help="Retained for compatibility; filter verification is always run.")
+    parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
-    try:
-        import vapoursynth as vs
-    except ImportError as exc:
-        print(f"failed to import VapourSynth Python module: {exc}", file=sys.stderr)
-        return 1
-    vs_pkg = Path(vs.__file__).resolve().parent
-    plugin_dir = vs_pkg / "plugins" / PLUGIN_NAME
-    for path in [plugin_dir / f"{PLUGIN_NAME}.dll", plugin_dir / "manifest.vs"]:
-        if not path.exists():
-            print(f"missing installed file: {path}", file=sys.stderr)
-            return 1
-    add_dll_dirs([plugin_dir, vs_pkg, Path(sys.executable).resolve().parent, Path(sysconfig.get_paths().get("platlib", "")), Path(sysconfig.get_paths().get("purelib", "")), *(Path(path) for path in site.getsitepackages())])
+    if args.site_dir:
+        sys.path.insert(0, args.site_dir)
+    import vapoursynth as vs
 
-    try:
-        core = vs.create_environment().get_core()
-    except AttributeError:
-        core = vs.core
+    package_dir = Path(vs.__file__).resolve().parent / "plugins" / PLUGIN_NAME
+    for required in (package_dir / f"{PLUGIN_NAME}{plugin_suffix()}", package_dir / "manifest.vs"):
+        if not required.is_file():
+            raise FileNotFoundError(f"missing installed file: {required}")
+    core = vs.core
     if not hasattr(core, "cfl") or not hasattr(core.cfl, "KACFL"):
-        print("core.cfl.KACFL missing after installed-wheel autoload", file=sys.stderr)
-        return 1
-    print(core.cfl.KACFL)
-    if args.exercise_filter:
-        exercise_filter(core, vs)
+        raise RuntimeError("core.cfl.KACFL was not autoloaded from the installed wheel")
+    result = {"plugin_dir": str(package_dir), "namespace_loaded": True, **exercise_filter(core, vs)}
+    print(json.dumps(result, indent=2, sort_keys=True) if args.json else result)
     return 0
 
 

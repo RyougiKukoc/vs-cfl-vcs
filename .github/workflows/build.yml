@@ -1,0 +1,178 @@
+name: Build and validate packages
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows-ucrt64:
+    name: Build Windows UCRT64
+    runs-on: windows-2025
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Python build tools
+        shell: cmd
+        run: >-
+          "%pythonLocation%\python.exe" -m pip install --upgrade pip build hatchling packaging meson ninja
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-meson
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkgconf
+      - name: Prepare VapourSynth R77 wheel
+        shell: cmd
+        run: >-
+          "%pythonLocation%\python.exe" tools\ci_prepare_msys2.py
+      - name: Build plugin package
+        run: /ucrt64/bin/python tools/ci_build_msys2.py --clean
+      - name: Smoke package with explicit load
+        shell: cmd
+        run: >-
+          "%pythonLocation%\python.exe" tools\smoke_load_artifact.py
+          --vapoursynth-root _deps\vapoursynth-wheel-R77
+          --artifact-dir dist\msys2-ucrt64 --json
+      - name: Build Windows wheel from local package
+        shell: cmd
+        env:
+          VS_CFL_PREBUILT_URL: ${{ github.workspace }}\dist\vs-cfl-msys2-ucrt64.zip
+        run: |
+          "%pythonLocation%\python.exe" tools\package_plugin_zip.py --input-dir dist\msys2-ucrt64 --output dist\vs-cfl-msys2-ucrt64.zip
+          "%pythonLocation%\python.exe" -m build --wheel --no-isolation --outdir dist\wheels
+          "%pythonLocation%\python.exe" tools\ci_make_release_assets.py --package-dir dist\msys2-ucrt64\vs_cfl --wheel-dir dist\wheels --out-dir dist\release-assets-windows --zip-name vs-cfl-msys2-ucrt64.zip --clean
+      - name: Smoke Windows release zip and wheel
+        shell: cmd
+        run: |
+          "%pythonLocation%\python.exe" tools\smoke_load_artifact.py --vapoursynth-root _deps\vapoursynth-wheel-R77 --artifact-zip dist\release-assets-windows\vs-cfl-msys2-ucrt64.zip --json
+          for %%I in (dist\release-assets-windows\*.whl) do "%pythonLocation%\python.exe" -m pip install --force-reinstall --no-deps "%%~fI"
+          "%pythonLocation%\python.exe" tools\smoke_installed_wheel.py --json
+      - name: Smoke Windows source install using release payload
+        shell: cmd
+        env:
+          VS_CFL_PREBUILT_URL: ${{ github.workspace }}\dist\release-assets-windows\vs-cfl-msys2-ucrt64.zip
+        run: |
+          "%pythonLocation%\python.exe" -m pip uninstall -y vs-cfl
+          "%pythonLocation%\python.exe" -m pip install --force-reinstall --no-deps --no-build-isolation -v .
+          "%pythonLocation%\python.exe" tools\smoke_installed_wheel.py --json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vs-cfl-release-assets-windows
+          path: dist/release-assets-windows
+          if-no-files-found: error
+
+  linux-x86_64:
+    name: Build Linux x86_64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build conservative Linux wheel and payload
+        shell: bash
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE:/workspace" -w /workspace quay.io/pypa/manylinux2014_x86_64 bash -lc '
+            set -eo pipefail
+            source /opt/rh/devtoolset-10/enable
+            set -ux
+            py=/opt/python/cp312-cp312/bin/python
+            export PATH="/opt/python/cp312-cp312/bin:$PATH"
+            "$py" -m pip install --upgrade pip build hatchling packaging meson ninja
+            mkdir -p _deps/vapoursynth-wheel dist/wheels-linux dist/linux-x86_64
+            "$py" -m pip download --only-binary=:all: --no-deps --platform manylinux_2_27_x86_64 --implementation cp --python-version 312 --abi abi3 VapourSynth -d _deps/vapoursynth-wheel
+            unzip -q _deps/vapoursynth-wheel/*.whl -d _deps/vapoursynth-wheel/extracted
+            export PYTHONPATH=/workspace/_deps/vapoursynth-wheel/extracted
+            export PKG_CONFIG_PATH=/tmp/unrelated-pkgconfig
+            export VS_CFL_FORCE_BUILD=1
+            export VS_CFL_PLATFORM_TAG=manylinux_2_27_x86_64
+            "$py" -m build --wheel --no-isolation --outdir dist/wheels-linux
+            wheel=$(find dist/wheels-linux -name "*.whl" -print -quit)
+            test -n "$wheel"
+            unzip -q "$wheel" "vapoursynth/plugins/vs_cfl/*" -d dist/linux-x86_64/extracted
+            mv dist/linux-x86_64/extracted/vapoursynth/plugins/vs_cfl dist/linux-x86_64/vs_cfl
+            "$py" tools/ci_make_release_assets.py --package-dir dist/linux-x86_64/vs_cfl --wheel-dir dist/wheels-linux --out-dir dist/release-assets-linux --zip-name vs-cfl-linux-x86_64.zip --clean
+            test -f dist/linux-x86_64/vs_cfl/libgomp.so.1
+            readelf --version-info dist/linux-x86_64/vs_cfl/vs_cfl.so | grep -o "GLIBC_[0-9.]*" | sort -Vu
+            "$py" -c "import re, subprocess; text = subprocess.check_output([\"readelf\", \"--version-info\", \"dist/linux-x86_64/vs_cfl/vs_cfl.so\"], text=True); versions = [tuple(map(int, value.split(\".\"))) for value in re.findall(r\"GLIBC_(\\d+\\.\\d+)\", text)]; assert all(version <= (2, 17) for version in versions), versions"
+          '
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vs-cfl-release-assets-linux
+          path: dist/release-assets-linux
+          if-no-files-found: error
+
+  linux-runtime-smoke:
+    name: Smoke Linux release payload
+    needs: linux-x86_64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: vs-cfl-release-assets-linux
+          path: dist/release-assets-linux
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install runtime and smoke direct release assets
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python -m pip install --upgrade pip build hatchling packaging meson ninja VapourSynth
+          python tools/smoke_load_artifact.py --artifact-zip dist/release-assets-linux/vs-cfl-linux-x86_64.zip --json
+          python -m pip install --force-reinstall --no-deps dist/release-assets-linux/*.whl
+          python tools/smoke_installed_wheel.py --json
+      - name: Smoke isolated force-build fallback with unrelated pkg-config path
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python -m pip uninstall -y vs-cfl
+          mkdir -p /tmp/unrelated-pkgconfig
+          VS_CFL_FORCE_BUILD=1 PKG_CONFIG_PATH=/tmp/unrelated-pkgconfig python -m pip install --force-reinstall --no-deps -v . 2>&1 | tee force-build.log
+          grep -F "skipping prebuilt asset because VS_CFL_FORCE_BUILD is set" force-build.log
+          python tools/smoke_installed_wheel.py --json
+      - name: Smoke source install using Linux release payload
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python -m pip uninstall -y vs-cfl
+          VS_CFL_PREBUILT_URL="$GITHUB_WORKSPACE/dist/release-assets-linux/vs-cfl-linux-x86_64.zip" python -m pip install --force-reinstall --no-deps --no-build-isolation -v . 2>&1 | tee release-payload.log
+          grep -F "using prebuilt release asset" release-payload.log
+          python tools/smoke_installed_wheel.py --json
+
+  publish-release:
+    name: Publish release assets
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows-ucrt64, linux-runtime-smoke]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: vs-cfl-release-assets-*
+          path: release-assets
+          merge-multiple: true
+      - name: Create or update one release after both platform gates
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          tag="$GITHUB_REF_NAME"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" release-assets/* --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$tag" release-assets/* --title "$tag" --notes "Automated Windows and Linux release."
+          fi

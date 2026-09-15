@@ -60,6 +60,28 @@ MSYS2 runtime DLL 安装到 `vapoursynth/plugins/vs_cfl/`。VapourSynth R77+
 MSYS2/UCRT64 + Meson 构建。可设置 `VS_CFL_FORCE_BUILD=1` 强制走本地构建；
 `VS_CFL_PREBUILT_URL` 可指定本地或远程 release zip，方便离线和 CI 测试。
 
+## Release-backed pip install
+
+The package name is `vs-cfl`. Version `1.0.2` uses Release tag `v1.0.2`.
+On Linux x86_64, the documented installation downloads
+`vs-cfl-linux-x86_64.zip` first and installs its `vs_cfl/` payload under
+`vapoursynth/plugins/`:
+
+```bash
+pip install "vs-cfl @ git+https://github.com/RyougiKukoc/vs-cfl-vcs.git"
+```
+
+The Linux payload contains `manifest.vs`, `vs_cfl.so`, and its OpenMP runtime
+`libgomp.so.1`. The published wheel is tagged `manylinux_2_27_x86_64`, matching
+the VapourSynth R79 Linux runtime baseline. Windows x86_64 keeps using
+`vs-cfl-msys2-ucrt64.zip` and its existing DLL payload.
+
+Set `VS_CFL_FORCE_BUILD=1` to bypass a Release payload and build locally with
+Meson. Native Linux and macOS builds require a compatible VapourSynth wheel in
+the build environment; the build hook prepends that wheel's
+`vapoursynth/pkgconfig` directory to any existing `PKG_CONFIG_PATH`. macOS has
+no published payload and therefore always uses the native build path.
+
 ## 许可
 
 MIT
