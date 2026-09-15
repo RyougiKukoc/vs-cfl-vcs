@@ -215,7 +215,11 @@ def _stage_local_build(target_dir: Path) -> None:
         return
 
     meson = _meson_command()
-    _run(meson + ["setup", str(build_dir), "--wipe"], env=env)
+    setup_args = ["setup", str(build_dir), "--wipe"]
+    if sys.platform == "linux":
+        # The OpenMP build is unstable in the conservative Linux runtime.
+        setup_args.append("-Dopenmp=disabled")
+    _run(meson + setup_args, env=env)
     _run(meson + ["compile", "-C", str(build_dir)], env=env)
     plugin = _find_built_plugin(build_dir)
     staged_plugin = target_dir / f"{PLUGIN_NAME}{plugin.suffix}"

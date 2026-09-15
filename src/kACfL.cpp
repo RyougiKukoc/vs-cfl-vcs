@@ -198,7 +198,9 @@ static void processFrame(
     const float range_sigma = (ep > 0.0f) ? (0.1f / ep) : 1e6f;
     const float neg_half_inv_rsq = -0.5f / (range_sigma * range_sigma);
 
+#ifdef _OPENMP
     #pragma omp parallel for schedule(dynamic, 16)
+#endif
     for (int oy = 0; oy < lumaH; ++oy) {
 
         const T *srcRowY = reinterpret_cast<const T *>(srcYPtr + oy * srcYStride);

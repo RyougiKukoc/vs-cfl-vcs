@@ -24,6 +24,7 @@ include = [
   "include",
   "LICENSE",
   "meson.build",
+  "meson_options.txt",
   "pyproject.toml",
   "README.md",
   "src",

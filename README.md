@@ -71,9 +71,11 @@ On Linux x86_64, the documented installation downloads
 pip install "vs-cfl @ git+https://github.com/RyougiKukoc/vs-cfl-vcs.git"
 ```
 
-The Linux payload contains `manifest.vs`, `vs_cfl.so`, and its OpenMP runtime
-`libgomp.so.1`. The published wheel is tagged `manylinux_2_27_x86_64`, matching
-the VapourSynth R79 Linux runtime baseline. Windows x86_64 keeps using
+The Linux payload contains `manifest.vs` and `vs_cfl.so`. Linux payloads and
+Linux source builds deliberately use the serial CPU implementation because the
+optional OpenMP path is not stable across the conservative runtime baseline.
+The published wheel is tagged `manylinux_2_27_x86_64`, matching the VapourSynth
+R79 Linux runtime baseline. Windows x86_64 keeps using
 `vs-cfl-msys2-ucrt64.zip` and its existing DLL payload.
 
 Set `VS_CFL_FORCE_BUILD=1` to bypass a Release payload and build locally with

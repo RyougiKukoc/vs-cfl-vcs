@@ -54,7 +54,7 @@ jobs:
           VS_CFL_PREBUILT_URL: ${{ github.workspace }}\dist\vs-cfl-msys2-ucrt64.zip
         run: |
           "%pythonLocation%\python.exe" tools\package_plugin_zip.py --input-dir dist\msys2-ucrt64 --output dist\vs-cfl-msys2-ucrt64.zip
-          "%pythonLocation%\python.exe" -m build --wheel --no-isolation --outdir dist\wheels
+          "%pythonLocation%\python.exe" -m build --wheel --no-isolation --skip-dependency-check --outdir dist\wheels
           "%pythonLocation%\python.exe" tools\ci_make_release_assets.py --package-dir dist\msys2-ucrt64\vs_cfl --wheel-dir dist\wheels --out-dir dist\release-assets-windows --zip-name vs-cfl-msys2-ucrt64.zip --clean
       - name: Smoke Windows release zip and wheel
         shell: cmd
@@ -104,7 +104,7 @@ jobs:
             unzip -q "$wheel" "vapoursynth/plugins/vs_cfl/*" -d dist/linux-x86_64/extracted
             mv dist/linux-x86_64/extracted/vapoursynth/plugins/vs_cfl dist/linux-x86_64/vs_cfl
             "$py" tools/ci_make_release_assets.py --package-dir dist/linux-x86_64/vs_cfl --wheel-dir dist/wheels-linux --out-dir dist/release-assets-linux --zip-name vs-cfl-linux-x86_64.zip --clean
-            test -f dist/linux-x86_64/vs_cfl/libgomp.so.1
+            test ! -e dist/linux-x86_64/vs_cfl/libgomp.so.1
             readelf --version-info dist/linux-x86_64/vs_cfl/vs_cfl.so | grep -o "GLIBC_[0-9.]*" | sort -Vu
             "$py" -c "import re, subprocess; text = subprocess.check_output([\"readelf\", \"--version-info\", \"dist/linux-x86_64/vs_cfl/vs_cfl.so\"], text=True); versions = [tuple(map(int, value.split(\".\"))) for value in re.findall(r\"GLIBC_(\\d+\\.\\d+)\", text)]; assert all(version <= (2, 17) for version in versions), versions"
           '
