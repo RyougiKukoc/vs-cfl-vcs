@@ -25,7 +25,7 @@ jobs:
       - name: Install Python build tools
         shell: cmd
         run: >-
-          "%pythonLocation%\python.exe" -m pip install --upgrade pip build hatchling packaging meson ninja
+          "%pythonLocation%\python.exe" -m pip install --upgrade pip build hatchling packaging meson ninja VapourSynth==77
       - uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
