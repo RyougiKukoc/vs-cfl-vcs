@@ -1,3 +1,9 @@
+# Deprecated
+
+This repository is deprecated. Please use [vapoursynth-api4-wheels](https://github.com/AliceTeaParty/vapoursynth-api4-wheels).
+
+---
+
 # vs-cfl
 
 Chroma-from-Luma for VapourSynth — 亮度引导的色度重建类算法集
